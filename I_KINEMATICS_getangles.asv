@@ -1,0 +1,123 @@
+function [q] = I_KINEMATICS_getangles(T07_set,elbow)
+%VERSION: 4
+
+%% IN
+%   - T07 transfer function that defines endofactor location and
+%   orientation
+%   - a 4x4 matrix 
+%     [       | Ex]
+%     [  R07  | Ey]
+%     [       | Ez]
+%     [ 0 0 0   1 ]
+% elbow config to help avoid obsticles i.e. up or down
+
+%% OUT
+%   - angles q1 to q7 that achieve desired output.   
+
+%% INIT
+
+% L E N G T H S
+D1 = 2;
+D3 = 5;
+D5 = 5;
+D7 = 2;
+
+% O F F S E T S
+q_offset = zeros(7,1);
+q_offset(1) = -90;
+q_offset(4) = -90;
+q_offset(5) = -90;
+
+%% **************************  S E T   E(x,y,z)  **************************
+       
+    r0E = [T07_set(1,4);T07_set(2,4);T07_set(3,4); 1];
+        
+%% ****************************   G E T  P3   *****************************
+    
+    % vector from E to P3 in frame {7} the wrist
+    % projetion back along z7 to get P3 in frame {7}
+    rEP3_7 = [0; 0; -D7; 1] ;
+    
+    % then translate into frame {0} to get vector from 0 to P3 in {0}
+    r0P3 = T07_set*rEP3_7;
+    P3 = [r0P3(1) ; r0P3(2) ; r0P3(3) ; 1];
+        
+%% ****************************  G E T   q 1  *****************************
+    
+    % rotate q1 s.t. x1 aligns with P3, in {0}
+    q1 = atan2d(P3(2), P3(1)) + q_offset(1);
+    
+    % Transform {0} to {1} about Z z1
+    T01 = [ -sind(q1) -cosd(q1) 0 0 ; cosd(q1) -sind(q1) 0 0 ; 0 0 1 D1 ; 0 0 0 1];
+    
+    % point 01 locaiton in {0}
+    P1 = [T01(1,4) ; T01(2,4) ; T01(3,4); 1];
+        
+%% ****************************  G E T   q 2  *****************************
+    
+    %Move everything to frame {1}
+    
+    P3_1 = T01\P3;
+    
+    %distance P1 to P3
+    h = ((P3_1(1))^2 + (P3_1(3))^2)^0.5;
+    theta_01 = atan2d(P3_1(3) , P3_1(1));
+    theta_02 = acosd((h/2)/D3);
+    
+    if strcmp(elbow,'up')
+        q2 = theta_01 - theta_02;        
+        q4 = q_offset(4) + 2*theta_02;
+    end
+        
+    if strcmp(elbow,'down')
+        q2 = theta_01 + theta_02;        
+        q4 = q_offset(4) - 2*theta_02;
+    end
+       
+%% ****************************  G E T   q 3  *****************************
+% set a3.... becaues I dont know what else to do
+q3 = 0;
+    
+%% ****************************  G E T   q 4  *****************************
+    % Transform 0 to 3
+    T12 = [-sind(q2) -cosd(q2) 0 0 ; 0 0 -1 0 ; cosd(q2) -sind(q2)  0 0 ; 0 0 0 1];
+    T23 = [cosd(q3) -sind(q3) 0 0 ; 0 0 -1 -D3 ; sind(q3) cosd(q3) 0 0 ; 0 0 0 1];
+    T03 = T01*T12*T23;            
+    
+    T34 = [sind(q4) cosd(q4) 0 0 ; 0 0 1 0 ; cosd(q4) -sind(q4) 0 0 ; 0 0 0 1];
+    T04 = T03*T34;
+        
+%% ************************  G E T   q 5 6 and 7  *************************
+    
+    r0E_4 = T04\r0E;
+    q5 = q_offset(5)+atan2d(r0E_4(1), r0E_4(3));
+    T45 = [cosd(q5) -sind(q5) 0 0; 0 0 1 D5 ; -sind(q5) -cosd(q5) 0 0 ; 0 0 0 1 ];
+    
+    % need T47
+    T47 = T04\T07_set;
+        
+%   T57 =   
+%   [ -c7*s6,  s6*s7, c6, L67*c6]
+%   [     s7,     c7,  0,      0]
+%   [  c6*c7, -c6*s7, s6, L67*s6]
+%   [      0,      0,  0,      1]
+%     
+    T05 = T04*T45;
+    T57 = T05\T07_set;
+    q6 = atan2d(T57(3,3), T57(1,3));
+   
+    T56 = [-sind(q6) -cosd(q6) 0 0; 0 0 1 0 ; cosd(q6) -sind(q6) 0 0 ; 0 0 0 1 ];
+    T67 = (T45*T56)\T47;
+    % T67 =
+    % [ c7, -s7,  0,    0]
+    % [  0,   0, -1, -L67]
+    % [ s7,  c7,  0,    0]
+    % [  0,   0,  0,    1]
+    
+    q7 = atan2d(T67(3,1),T67(1,1));
+
+    %% END INVERSE   
+q = [q1 q2 q3 q4 q5 q6 q7];
+
+
+
